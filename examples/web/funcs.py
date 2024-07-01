@@ -6,7 +6,7 @@ from time import sleep
 import gradio as gr
 import numpy as np
 
-from tools.audio import wav_arr_to_mp3_view
+from tools.audio import unsafe_float_to_int16, has_ffmpeg_installed
 from tools.logger import get_logger
 
 logger = get_logger(" WebUI ")
@@ -25,6 +25,10 @@ is_in_generate = False
 
 seed_min = 1
 seed_max = 4294967295
+
+use_mp3 = has_ffmpeg_installed()
+if not use_mp3:
+    logger.warn("no ffmpeg installed, use wav file output")
 
 # 音色选项：用于预置合适的音色
 voices = {
@@ -48,6 +52,7 @@ def generate_seed():
 # 返回选择音色对应的seed
 def on_voice_change(vocie_selection):
     return voices.get(vocie_selection)["seed"]
+
 
 def on_audio_seed_change(audio_seed_input):
     with TorchSeedContext(audio_seed_input):
@@ -117,12 +122,14 @@ def _set_generate_buttons(generate_button, interrupt_button, is_reset=False):
 
 
 def refine_text(
-    text, text_seed_input, refine_text_flag,
+    text,
+    text_seed_input,
+    refine_text_flag,
 ):
     global chat
 
     if not refine_text_flag:
-        sleep(1) # to skip fast answer of loading mark
+        sleep(1)  # to skip fast answer of loading mark
         return text
 
     with TorchSeedContext(text_seed_input):
@@ -133,6 +140,7 @@ def refine_text(
         )
 
     return text[0] if isinstance(text, list) else text
+
 
 def generate_audio(text, temperature, top_P, top_K, spk_emb_text: str, stream):
     global chat, has_interrupted
@@ -157,10 +165,10 @@ def generate_audio(text, temperature, top_P, top_K, spk_emb_text: str, stream):
         for gen in wav:
             audio = gen[0]
             if audio is not None and len(audio) > 0:
-                yield wav_arr_to_mp3_view(audio[0]).tobytes()
+                yield 24000, unsafe_float_to_int16(audio[0])
                 del audio
     else:
-        yield wav_arr_to_mp3_view(np.array(wav[0]).flatten()).tobytes()
+        yield 24000, unsafe_float_to_int16(np.array(wav[0]).flatten())
 
 
 def interrupt_generate():
@@ -168,6 +176,7 @@ def interrupt_generate():
 
     has_interrupted = True
     chat.interrupt()
+
 
 def set_buttons_before_generate(generate_button, interrupt_button):
     global has_interrupted, is_in_generate
@@ -179,6 +188,7 @@ def set_buttons_before_generate(generate_button, interrupt_button):
         generate_button,
         interrupt_button,
     )
+
 
 def set_buttons_after_generate(generate_button, interrupt_button, audio_output):
     global has_interrupted, is_in_generate
